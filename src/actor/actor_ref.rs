@@ -1555,7 +1555,10 @@ impl<M: Send + 'static, Ok: Send + 'static, Err: ReplyError> ReplyRecipient<M, O
     ///
     /// See [`ActorRef::ask`].
     #[track_caller]
-    pub fn ask(&self, msg: M) -> ReplyRecipientAskRequest<'_, M, Ok, Err, WithoutRequestTimeout, WithoutRequestTimeout>
+    pub fn ask(
+        &self,
+        msg: M,
+    ) -> ReplyRecipientAskRequest<'_, M, Ok, Err, WithoutRequestTimeout, WithoutRequestTimeout>
     {
         ReplyRecipientAskRequest::new(
             self,
@@ -2827,7 +2830,11 @@ pub(crate) trait ReplyMessageHandler<M: Send + 'static, Ok: Send + 'static, Err:
         mailbox_timeout: Option<Duration>,
         reply_timeout: Option<Duration>,
     ) -> BoxFuture<'_, Result<Ok, SendError<M, Err>>>;
-    fn try_ask(&self, msg: M) -> BoxFuture<'_, Result<Ok, SendError<M, Err>>>;
+    fn try_ask(
+        &self,
+        msg: M,
+        reply_timeout: Option<Duration>,
+    ) -> BoxFuture<'_, Result<Ok, SendError<M, Err>>>;
     fn blocking_ask(&self, msg: M) -> Result<Ok, SendError<M, Err>>;
 
     fn reply_downgrade(&self) -> WeakReplyRecipient<M, Ok, Err>;
@@ -2855,8 +2862,12 @@ where
             .send()
             .boxed()
     }
-    fn try_ask(&self, msg: M) -> BoxFuture<'_, Result<Ok, SendError<M, Err>>> {
-        Box::pin(self.ask(msg).try_send())
+    fn try_ask(
+        &self,
+        msg: M,
+        reply_timeout: Option<Duration>,
+    ) -> BoxFuture<'_, Result<Ok, SendError<M, Err>>> {
+        Box::pin(self.ask(msg).reply_timeout_opt(reply_timeout).try_send())
     }
     fn blocking_ask(&self, msg: M) -> Result<Ok, SendError<M, Err>> {
         self.ask(msg).blocking_send()

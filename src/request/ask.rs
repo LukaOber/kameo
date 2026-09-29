@@ -703,7 +703,10 @@ where
     }
 
     /// Sets the timeout for waiting for a reply from the actor.
-    pub fn reply_timeout(self, duration: Duration) -> ReplyRecipientAskRequest<'a, M, Ok, Err, Tm, WithRequestTimeout> {
+    pub fn reply_timeout(
+        self,
+        duration: Duration,
+    ) -> ReplyRecipientAskRequest<'a, M, Ok, Err, Tm, WithRequestTimeout> {
         self.reply_timeout_opt(Some(duration))
     }
 
@@ -729,22 +732,40 @@ where
     {
         self.actor_ref
             .handler
-            .ask(self.msg, self.mailbox_timeout.into(), self.reply_timeout.into())
+            .ask(
+                self.msg,
+                self.mailbox_timeout.into(),
+                self.reply_timeout.into(),
+            )
             .await
     }
 }
 
-impl<M, Ok, Err> ReplyRecipientAskRequest<'_, M, Ok, Err, WithoutRequestTimeout, WithoutRequestTimeout>
+impl<M, Ok, Err, Tr> ReplyRecipientAskRequest<'_, M, Ok, Err, WithoutRequestTimeout, Tr>
 where
     M: Send + 'static,
     Ok: Send + 'static,
     Err: ReplyError,
 {
     /// Tries to send the message without waiting for mailbox capacity.
-    pub async fn try_send(self) -> Result<Ok, SendError<M, Err>> {
-        self.actor_ref.handler.try_ask(self.msg).await
+    pub async fn try_send(self) -> Result<Ok, SendError<M, Err>>
+    where
+        Tr: Into<Option<Duration>>,
+    {
+        self.actor_ref
+            .handler
+            .try_ask(self.msg, self.reply_timeout.into())
+            .await
     }
+}
 
+impl<M, Ok, Err>
+    ReplyRecipientAskRequest<'_, M, Ok, Err, WithoutRequestTimeout, WithoutRequestTimeout>
+where
+    M: Send + 'static,
+    Ok: Send + 'static,
+    Err: ReplyError,
+{
     /// Sends the message in a blocking context.
     pub fn blocking_send(self) -> Result<Ok, SendError<M, Err>> {
         self.actor_ref.handler.blocking_ask(self.msg)
@@ -763,9 +784,11 @@ where
     type IntoFuture = BoxFuture<'a, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
-        self.actor_ref
-            .handler
-            .ask(self.msg, self.mailbox_timeout.into(), self.reply_timeout.into())
+        self.actor_ref.handler.ask(
+            self.msg,
+            self.mailbox_timeout.into(),
+            self.reply_timeout.into(),
+        )
     }
 }
 
@@ -1632,8 +1655,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reply_recipient_can_override_default_reply_timeout() -> Result<(), Box<dyn std::error::Error>>
-    {
+    async fn reply_recipient_can_override_default_reply_timeout()
+    -> Result<(), Box<dyn std::error::Error>> {
         let prepared = SleepActor::prepare_with_mailbox(mailbox::bounded(100))
             .reply_timeout(Duration::from_millis(100));
         let actor_ref = prepared.actor_ref().clone();
@@ -1651,9 +1674,7 @@ mod tests {
         );
         // Without override, the default applies
         assert_eq!(
-            recipient
-                .ask(Sleep(Duration::from_millis(400)))
-                .await,
+            recipient.ask(Sleep(Duration::from_millis(400))).await,
             Err(SendError::Timeout(None)),
         );
 
